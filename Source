@@ -1,1 +1,247 @@
+-- Swish Aimbot.luau
+if inputBegan then
+    inputBegan:Disconnect()
+    inputBegan = nil
+end
 
+if renderStepped then
+    renderStepped:Disconnect()
+    renderStepped = nil
+end
+
+if highlight then
+    highlight:Destroy()
+end
+
+local userInputService = game:GetService("UserInputService")
+local repStorage = game:GetService("ReplicatedStorage")
+local runService = game:GetService("RunService")
+local starterGui = game:GetService("StarterGui")
+local players = game:GetService("Players")
+
+local localPlayer = players.LocalPlayer
+
+local character = localPlayer.Character
+local playerScripts = localPlayer.PlayerScripts
+
+local IS_IN_DISTANCE = Color3.fromRGB(0, 255, 0)
+local IS_OUT_DISTANCE = Color3.fromRGB(255, 0, 0)
+
+local motionState = require(playerScripts.ClientLoader.Runtime.MotionState)
+local network = require(repStorage.Shared.BasketballPackets)
+
+getgenv().highlight = Instance.new("Highlight")
+highlight.Parent = starterGui
+highlight.Adornee = character
+highlight.FillColor = IS_OUT_DISTANCE
+highlight.OutlineTransparency = 1
+
+local shootingData = {
+    [75] = {
+        {minDist = 57, maxDist = 58, arc = 50},
+        {minDist = 59, maxDist = 60, arc = 45}
+    },
+
+    [80] = {
+        {minDist = 57, maxDist = 58, arc = 65},
+        {minDist = 59, maxDist = 60, arc = 60},
+        {minDist = 61, maxDist = 62, arc = 55},
+        {minDist = 63, maxDist = 64, arc = 50},
+    },
+
+    [85] = {
+        {minDist = 57, maxDist = 58, arc = 90},
+        {minDist = 59, maxDist = 60, arc = 85},
+        {minDist = 61, maxDist = 62, arc = 80},
+        {minDist = 63, maxDist = 64, arc = 75},
+        {minDist = 65, maxDist = 66, arc = 70},
+        {minDist = 67, maxDist = 68, arc = 65},
+        {minDist = 69, maxDist = 70, arc = 60},
+        {minDist = 71, maxDist = 72, arc = 55},
+        {minDist = 73, maxDist = 74, arc = 50},
+    }
+}
+
+local goals = { } do
+    for _, goal in workspace:GetDescendants() do
+        if goal:IsA("MeshPart") and goal.Name == "Cylinder" then
+            table.insert(goals, goal)
+        end
+    end
+end
+
+local envHasKey do
+    for _, f in getgc(true) do
+        if typeof(f) == "function" and getinfo(f).name ==  "envHasKey" and getinfo(f).source:find("client") then
+            envHasKey = f
+        end
+    end
+end
+
+local function getKey()
+    for _, module in getloadedmodules() do
+        if module.Name == "MotionState" then
+            local get = require(module).get
+
+            return getupvalue(get, 3)
+        end
+    end
+end
+
+local function getBodyPart(
+    bodyPart: string
+)
+    local character = localPlayer.Character
+
+    if character then
+        return character:FindFirstChild(bodyPart)
+    end
+end
+
+local function getPower()
+    return localPlayer:GetAttribute("power")
+end
+
+local function getHumanoid()
+    return getBodyPart("Humanoid")
+end
+
+local function getHumanoidState()
+    return getHumanoid():GetState()
+end
+
+local function setHumanoidState(state)
+    return getHumanoid():ChangeState(state)
+end
+
+local function getDistanceBetween(
+    a: Instance,
+    b: Instance
+)
+    return (typeof(a) and typeof(b) == "Instance") and (a.Position - b.Position).Magnitude or (a - b).Magnitude
+end
+
+local function round(
+	number,
+	decimalPlace
+	)
+    return tonumber(string.format(`%.{decimalPlace}f`, number))
+end
+
+local function getGoal()
+    local closestDistance, closestGoal = 9e9
+
+    for _, goal in goals do
+        local magnitude = getDistanceBetween(getBodyPart("HumanoidRootPart"), goal)
+
+        if magnitude < closestDistance then
+            closestDistance = magnitude
+            closestGoal = goal
+        end
+    end
+
+    return closestGoal, closestDistance
+end
+
+local function getArc(
+    goalPosition: Vector3, 
+    rootPosition: Vector3
+)
+    local distance = round(getDistanceBetween(goalPosition, rootPosition), 0)
+    local power = getPower()
+    
+    local data = shootingData[power]
+    
+    if power and data then
+        for _, info in data do
+            if distance >= info.minDist and distance <= info.maxDist then
+                
+                return info.arc, false
+            end
+        end
+    end
+end
+
+local function isCharacterInDistance()
+    local rootPart = getBodyPart("HumanoidRootPart")
+    local power = getPower()
+
+    if not rootPart or not power then
+        return false
+    end
+
+    local goal, distance = getGoal()
+    local data = shootingData[power]
+
+    if not goal or not data then
+        return false
+    end
+
+    distance = round(distance, 0)
+
+    for _, info in data do
+        if distance >= info.minDist and distance <= info.maxDist then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function shoot(
+)
+    local goal, distance = getGoal()
+    local power = getPower()
+
+    local rootPosition = getBodyPart("HumanoidRootPart").Position
+    local headPosition = getBodyPart("Head").Position
+
+    local ball = getBodyPart("basketball")
+
+    local arc = getArc(goal.Position, rootPosition)
+    local hit = goal.Position + Vector3.new(0, arc, 0)
+
+    local key = getKey()
+
+    local arguments = {
+		ball = ball,
+		key = key,
+		hit = hit,
+		rootPosition = rootPosition,
+		headPosition = headPosition
+	}
+
+    network.shoot.send(arguments)
+end
+
+local function onInputBegan(
+    input: InputObject,
+    gpe: boolean
+)
+    if input.KeyCode == Enum.KeyCode.X  and not gpe then
+        if getHumanoidState() ~= Enum.HumanoidStateType.Freefall then
+            setHumanoidState(Enum.HumanoidStateType.Jumping)
+            task.wait(0.25)
+        end
+            
+        shoot()
+    end
+end
+
+local function onRenderStepped(
+    dt: number
+)
+    highlight.FillTransparency = not getBodyPart("basketball") and 1 or 0.5
+    highlight.FillColor = isCharacterInDistance() and IS_IN_DISTANCE or IS_OUT_DISTANCE
+end
+
+local function init()
+    hookfunction(envHasKey, function()
+        return false, ""
+    end)
+
+    getgenv().inputBegan = userInputService.InputBegan:Connect(onInputBegan)
+    getgenv().renderStepped = runService.RenderStepped:Connect(onRenderStepped)
+end
+
+task.spawn(init)
