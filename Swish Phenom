@@ -1,0 +1,285 @@
+if onInput then
+    getgenv().onInput:Disconnect()
+    getgenv().onInput = nil
+end
+
+if renderStepped then
+    getgenv().renderStepped:Disconnect()
+    getgenv().renderStepped = nil
+end
+
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local memStorageService = game:GetService("MemStorageService")
+local userInputService = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
+local players = game:GetService("Players")
+
+local actor = memStorageService:FindFirstChildWhichIsA("Actor")
+local id, channel = create_comm_channel()
+
+local localPlayer = players.LocalPlayer
+local character = localPlayer.Character
+
+local head = character.Head
+local torso = character.Torso
+
+local humanoid = character.Humanoid
+local root = character.HumanoidRootPart
+
+local playerGui = localPlayer.PlayerGui
+local powerFrame = playerGui.Game.Power
+
+local network = require(replicatedStorage.Shared.Network)
+
+local HL = Instance.new("Highlight")
+HL.Enabled = false
+HL.Adornee = character
+HL.FillColor = Color3.fromRGB(25, 255, 25)
+HL.OutlineColor = Color3.fromRGB(0, 255, 0)
+HL.Parent = playerGui
+
+local isInFooting = false
+
+local goals = {} do
+    for _, goal in workspace.Map.Stadium:GetDescendants() do
+        if goal:IsA("BasePart") and goal.Name == "Goal" then
+            table.insert(goals, goal)
+        end
+    end
+end
+
+local function onChannelEvent(
+    channel,
+    callback:(throwingResult) -> ()
+)
+    return channel.Event:Connect(callback)
+end
+
+local function getBall()
+    return character:FindFirstChild("Basketball")
+end
+
+local function getGoal()
+    local distance, getClosestGoal = 9e9
+
+    for _, goal in goals do
+        local magnitude = (root.Position - goal.Position).Magnitude
+
+        if magnitude < distance then
+            distance = magnitude
+            getClosestGoal = goal 
+        end
+    end
+    return getClosestGoal, distance
+end
+
+local function getSpawnPos(
+    shotDirection: vector
+)
+	local unit = (shotDirection - head.Position).Unit
+	return torso.Position + unit * 5
+end
+
+local function getPower()
+    return tonumber(powerFrame.Text.Text)
+end
+
+local function inFootingCheck()
+    local goal, distance = getGoal()
+    local basketball = getBall()
+    
+    local power = tonumber(getPower())
+
+    if power == 75 then
+        isInFooting = distance > 57 and distance < 61
+
+    elseif power == 80 then
+        isInFooting = distance > 57 and distance < 69
+
+    elseif power == 85 then
+        isInFooting = distance > 57 and distance < 74
+
+    elseif power == 90 then
+        isInFooting = distance > 57 and distance < 79
+
+    elseif power == 95 then
+        isInFooting = distance > 57 and distance < 86
+
+    elseif power == 100 then
+        isInFooting = distance > 57 and distance < 93
+
+    else
+        isInFooting = false
+    end
+
+    return isInFooting
+end
+
+local function getArc()
+    local goal, distance = getGoal()
+    local basketball = getBall()
+    
+    local power = getPower()
+    
+    if power == 75 then
+        if distance > 57 and distance < 59 then
+            return 55
+        elseif distance > 59 and distance < 60 then
+            return 50
+        elseif distance > 60 and distance < 61 then
+            return 45
+        end
+    elseif power == 80 then
+        if distance > 57 and distance < 59 then
+            return 75
+        elseif distance > 59 and distance < 63 then
+            return 70
+        elseif distance > 63 and distance < 65 then
+            return 60
+        elseif distance > 65 and distance < 69 then
+            return 50
+        end
+    elseif power == 85 then
+        if distance > 57 and distance < 63 then
+            return 85
+        elseif distance > 63 and distance < 67 then
+            return 80
+        elseif distance > 67 and distance < 70 then
+            return 75
+        elseif distance > 70 and distance < 74 then
+            return 60
+        end
+    elseif power == 90 then
+        if distance > 57 and distance < 63 then
+            return 100
+        elseif distance > 63 and distance < 67 then
+            return 95
+        elseif distance > 67 and distance < 69 then
+            return 90
+        elseif distance > 69 and distance < 74 then
+            return 85
+        elseif distance > 74 and distance < 77 then
+            return 75
+        elseif distance > 77 and distance < 79 then
+            return 65
+        end
+    elseif power == 95 then
+        if distance > 57 and distance < 58 then
+            return 120
+        elseif distance > 59 and distance < 63 then
+            return 115
+        elseif distance > 63 and distance < 68 then
+            return 110
+        elseif distance > 68 and distance < 71 then
+            return 105
+        elseif distance > 71 and distance < 74 then
+            return 100
+        elseif distance > 74 and distance < 79 then
+            return 95
+        elseif distance > 79 and distance < 81 then
+            return 90
+        elseif distance > 81 and distance < 82 then
+            return 65
+        elseif distance > 82 and distance < 86 then
+            return 60
+        end
+    elseif power == 100 then
+        if distance > 57 and distance < 66 then
+            return 130
+        elseif distance > 66 and distance < 69 then
+            return 125
+        elseif distance > 69 and distance < 74 then
+            return 120
+        elseif distance > 74 and distance < 79 then
+            return 115
+        elseif distance > 79 and distance < 82 then
+            return 110
+        elseif distance > 82 and distance < 84 then
+            return 105
+        elseif distance > 84 and distance  < 88 then
+            return 100
+        elseif distance > 88 and distance < 90 then
+            return 85
+        elseif distance > 90 and distance < 93 then
+            return 65
+        end
+    end
+end
+
+local function shoot()
+    local goal, distance = getGoal()
+    local arc = getArc()
+
+    local shotVector = goal.Position + Vector3.new(0, arc, 0)
+    local spawnPos = getSpawnPos(shotVector)
+    local power = getPower()
+
+    run_on_actor(actor, [[
+        local arguments = {...}
+        local dataChannel = get_comm_channel(arguments[1])
+
+        --lol goodluck patching this dial.
+        local throwingInitFn do
+            for _, fn in getgc(true) do
+                if typeof(fn) == "function" then
+                    local info = getinfo(fn)
+
+                    if info.name == "init" and info.source:find("ThrowingManager") then
+                        throwingInitFn = fn
+                    end
+                end
+            end
+        end
+
+        local throwingPack = getupvalue(getupvalue(throwingInitFn, 11), 4).pack
+
+        local shotVector = Vector3.new(arguments[2], arguments[3], arguments[4])
+        local spawnPos = Vector3.new(arguments[5], arguments[6], arguments[7])
+        local power = arguments[8]
+
+        local result = throwingPack(shotVector, spawnPos, power)
+
+        dataChannel:Fire(result)
+    ]], id, shotVector.X, shotVector.Y, shotVector.Z, spawnPos.X, spawnPos.Y, spawnPos.Z, power)
+end
+
+local function onInputBegan(
+    input: InputObject,
+    gpe: boolean
+)
+    if gpe then
+        return
+    end
+
+    if input.KeyCode == Enum.KeyCode.X and inFootingCheck() and getBall() ~= nil then
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+            task.wait(.25)
+
+            shoot()
+        end
+    end
+end
+
+local function onRenderStepped(
+    dt: number
+)
+    local ball = getBall()
+
+    if not ball then
+        HL.Enabled = false
+        return
+    end
+
+    HL.Enabled = inFootingCheck()
+end
+
+local function init()
+    getgenv().onInput = userInputService.InputBegan:Connect(onInputBegan)
+    getgenv().renderStepped = runService.RenderStepped:Connect(onRenderStepped)
+
+    onChannelEvent(channel, network.Gameplay.packets.Throw.send)
+end
+
+task.spawn(init)
